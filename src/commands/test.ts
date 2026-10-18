@@ -16469,7 +16469,9 @@ function openOutputFile(rawPath: string): FileSink {
   // Defensive: reject obviously-bad paths up front (a directory string
   // would fail later with EISDIR; that's a clearer 5/VALIDATION_ERROR
   // surface than letting it crash mid-write with TransportError).
-  if (resolved.endsWith('/')) {
+  // Check the RAW path: `resolve()` drops a trailing separator, and on
+  // Windows the separator is usually `\`.
+  if (/[\\/]$/.test(rawPath)) {
     throw localValidationError('out', 'must point to a file, not a directory');
   }
   // Validate the parent dir synchronously so a missing or non-directory
