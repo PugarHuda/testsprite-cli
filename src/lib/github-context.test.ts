@@ -143,6 +143,49 @@ describe('readGithubRunContext', () => {
     expect(ctx).toMatchObject({ kind: 'pull_request', trigger: { prNumber: 9 } });
   });
 
+  it('deployment_status: a lookup that never answers times out with exit 10 instead of hanging', async () => {
+    const hang = vi.fn(
+      (_url: string | URL | Request, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+        }),
+    ) as unknown as typeof globalThis.fetch;
+    const started = Date.now();
+    await expect(
+      readGithubRunContext(
+        actionsEnv({ GITHUB_EVENT_NAME: 'deployment_status', GITHUB_TOKEN: 't' }),
+        {
+          ...eventFile({ deployment: { sha: SHA } }),
+          fetchImpl: hang,
+          requestTimeoutMs: 50,
+        },
+      ),
+    ).rejects.toMatchObject({
+      exitCode: 10,
+      message: expect.stringContaining('did not answer within'),
+    });
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
+  it('deployment_status: a 200 that is not JSON (proxy, captive portal) is exit 10, not an uncaught crash', async () => {
+    const html = vi.fn(
+      async () =>
+        new Response('<html>sign in to the proxy</html>', {
+          status: 200,
+          headers: { 'content-type': 'text/html' },
+        }),
+    ) as unknown as typeof globalThis.fetch;
+    await expect(
+      readGithubRunContext(
+        actionsEnv({ GITHUB_EVENT_NAME: 'deployment_status', GITHUB_TOKEN: 't' }),
+        {
+          ...eventFile({ deployment: { sha: SHA } }),
+          fetchImpl: html,
+        },
+      ),
+    ).rejects.toMatchObject({ exitCode: 10, message: expect.stringContaining('not JSON') });
+  });
+
   it('deployment_status: needs GITHUB_TOKEN, and a failed lookup never falls back to a guess', async () => {
     await expect(
       readGithubRunContext(

@@ -23,7 +23,12 @@ export interface GithubContextDeps {
   /** Reads `$GITHUB_EVENT_PATH`; injectable so tests never touch the runner. */
   readFile?: (path: string) => string;
   fetchImpl?: FetchImpl;
+  /** Budget for the GitHub pull-request lookup, as `--request-timeout` gives every other call. */
+  requestTimeoutMs?: number;
 }
+
+/** Same default as the HttpClient's per-request budget when no flag or env var sets one. */
+const DEFAULT_LOOKUP_TIMEOUT_MS = 30_000;
 
 /** The temporary environment a pull request's runs live in — shared with the GitHub App. */
 export function previewEnvironmentName(prNumber: number): string {
@@ -86,7 +91,14 @@ export async function readGithubRunContext(
       );
     }
     const pulls = await listPullsForCommit(
-      { env, repoOwner, repoName, sha, token },
+      {
+        env,
+        repoOwner,
+        repoName,
+        sha,
+        token,
+        timeoutMs: deps.requestTimeoutMs ?? DEFAULT_LOOKUP_TIMEOUT_MS,
+      },
       deps.fetchImpl ?? globalThis.fetch,
     );
     // The OPEN PR whose head IS this commit is the one this deployment belongs to.
@@ -153,7 +165,14 @@ interface PullSummary {
 }
 
 async function listPullsForCommit(
-  args: { env: NodeJS.ProcessEnv; repoOwner: string; repoName: string; sha: string; token: string },
+  args: {
+    env: NodeJS.ProcessEnv;
+    repoOwner: string;
+    repoName: string;
+    sha: string;
+    token: string;
+    timeoutMs: number;
+  },
   fetchImpl: FetchImpl,
 ): Promise<PullSummary[]> {
   const base = (args.env.GITHUB_API_URL ?? 'https://api.github.com').replace(/\/+$/, '');
@@ -167,10 +186,19 @@ async function listPullsForCommit(
         authorization: `Bearer ${args.token}`,
         'x-github-api-version': '2022-11-28',
       },
+      // Without a budget a GitHub API that never answers hangs the job until the runner kills it.
+      signal: AbortSignal.timeout(args.timeoutMs),
     });
   } catch (err) {
+    const timedOut =
+      err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
     throw new CLIError(
-      `Could not look up the pull request for commit ${args.sha.slice(0, 7)}: ${err instanceof Error ? err.message : String(err)}`,
+      `Could not look up the pull request for commit ${args.sha.slice(0, 7)}: ` +
+        (timedOut
+          ? `GitHub did not answer within ${Math.round(args.timeoutMs / 1000)}s`
+          : err instanceof Error
+            ? err.message
+            : String(err)),
       10,
     );
   }
@@ -183,7 +211,16 @@ async function listPullsForCommit(
       response.status === 401 || response.status === 403 ? 5 : 10,
     );
   }
-  const body: unknown = await response.json();
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    // A proxy or captive portal answering 200 with HTML must be a transient failure, not an uncaught crash.
+    throw new CLIError(
+      `Could not look up the pull request for commit ${args.sha.slice(0, 7)}: GitHub answered ${response.status} with a body that is not JSON`,
+      10,
+    );
+  }
   if (!Array.isArray(body)) return [];
   return body.flatMap((item): PullSummary[] => {
     const pr = asRecord(item);
