@@ -116,6 +116,31 @@ describe('readGithubRunContext', () => {
       },
     );
     expect(closed.kind).toBe('no_pull_request');
+    // Nor is a merged/closed pull request whose head IS the deployed commit (a redeploy after merge).
+    for (const state of ['closed', 'merged']) {
+      const done = await readGithubRunContext(
+        actionsEnv({ GITHUB_EVENT_NAME: 'deployment_status', GITHUB_TOKEN: 't' }),
+        {
+          ...eventFile({ deployment: { sha: SHA } }),
+          fetchImpl: githubApi([{ number: 7, state, head: { sha: SHA, ref: 'feat/done' } }]),
+        },
+      );
+      expect(done).toMatchObject({ kind: 'no_pull_request', event: 'deployment_status' });
+    }
+  });
+
+  it('deployment_status: an open PR wins over a closed one with the same head commit', async () => {
+    const ctx = await readGithubRunContext(
+      actionsEnv({ GITHUB_EVENT_NAME: 'deployment_status', GITHUB_TOKEN: 't' }),
+      {
+        ...eventFile({ deployment: { sha: SHA } }),
+        fetchImpl: githubApi([
+          { number: 7, state: 'closed', head: { sha: SHA, ref: 'feat/old' } },
+          { number: 9, state: 'open', head: { sha: SHA, ref: 'feat/new' } },
+        ]),
+      },
+    );
+    expect(ctx).toMatchObject({ kind: 'pull_request', trigger: { prNumber: 9 } });
   });
 
   it('deployment_status: needs GITHUB_TOKEN, and a failed lookup never falls back to a guess', async () => {

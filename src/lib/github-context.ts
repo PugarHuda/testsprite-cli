@@ -89,9 +89,10 @@ export async function readGithubRunContext(
       { env, repoOwner, repoName, sha, token },
       deps.fetchImpl ?? globalThis.fetch,
     );
-    // The PR whose head IS this commit is the one this deployment belongs to.
-    // Anything looser (several open PRs, a merged one) is not a gate target.
-    const exact = pulls.filter(p => p.headSha === sha);
+    // The OPEN PR whose head IS this commit is the one this deployment belongs to.
+    // Anything looser (several open PRs, a merged or closed one) is not a gate target:
+    // a redeploy of a merged PR's head commit must not clone an environment for it.
+    const exact = pulls.filter(p => p.headSha === sha && p.state === 'open');
     const open = pulls.filter(p => p.state === 'open');
     const chosen = exact[0] ?? (open.length === 1 ? open[0] : undefined);
     if (!chosen) {
