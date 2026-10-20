@@ -188,11 +188,9 @@ async function listPullsForCommit(
       signal: AbortSignal.timeout(args.timeoutMs),
     });
   } catch (err) {
-    const timedOut =
-      err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
     throw new CLIError(
       `Could not look up the pull request for commit ${args.sha.slice(0, 7)}: ` +
-        (timedOut
+        (isTimeout(err)
           ? `GitHub did not answer within ${Math.round(args.timeoutMs / 1000)}s`
           : err instanceof Error
             ? err.message
@@ -212,10 +210,14 @@ async function listPullsForCommit(
   let body: unknown;
   try {
     body = await response.json();
-  } catch {
-    // A proxy or captive portal answering 200 with HTML must be a transient failure, not an uncaught crash.
+  } catch (err) {
+    // A proxy or captive portal answering 200 with HTML must be a transient failure, not an uncaught crash; so is
+    // a body that stalls until the timeout aborts it, which is reported as the timeout it is.
     throw new CLIError(
-      `Could not look up the pull request for commit ${args.sha.slice(0, 7)}: GitHub answered ${response.status} with a body that is not JSON`,
+      `Could not look up the pull request for commit ${args.sha.slice(0, 7)}: ` +
+        (isTimeout(err)
+          ? `GitHub did not finish answering within ${Math.round(args.timeoutMs / 1000)}s`
+          : `GitHub answered ${response.status} with a body that is not JSON`),
       10,
     );
   }
@@ -240,4 +242,8 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
+}
+
+function isTimeout(err: unknown): boolean {
+  return err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
 }
