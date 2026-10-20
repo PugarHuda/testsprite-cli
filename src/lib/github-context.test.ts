@@ -186,14 +186,19 @@ describe('readGithubRunContext', () => {
           init?.signal?.addEventListener('abort', () => controller.error(init.signal?.reason));
         },
       });
-      return Promise.resolve(new Response(body, { status: 200, headers: { 'content-type': 'application/json' } }));
+      return Promise.resolve(
+        new Response(body, { status: 200, headers: { 'content-type': 'application/json' } }),
+      );
     }) as unknown as typeof globalThis.fetch;
     await expect(
       readGithubRunContext(
         actionsEnv({ GITHUB_EVENT_NAME: 'deployment_status', GITHUB_TOKEN: 't' }),
         { ...eventFile({ deployment: { sha: SHA } }), fetchImpl: stall, requestTimeoutMs: 50 },
       ),
-    ).rejects.toMatchObject({ exitCode: 10, message: expect.stringContaining('did not finish answering within') });
+    ).rejects.toMatchObject({
+      exitCode: 10,
+      message: expect.stringContaining('did not finish answering within'),
+    });
   });
 
   it('deployment_status: a 200 that is not JSON (proxy, captive portal) is exit 10, not an uncaught crash', async () => {
