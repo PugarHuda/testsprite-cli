@@ -3441,10 +3441,20 @@ describe('runScaffold', () => {
     const dir = mkdtempSync(join(tmpdir(), 'cli-scaffold-sepdir-'));
     await expect(
       runScaffold(
-        { profile: 'default', output: 'text', debug: false, scaffoldType: 'frontend', out: `${dir}/`, force: false },
+        {
+          profile: 'default',
+          output: 'text',
+          debug: false,
+          scaffoldType: 'frontend',
+          out: `${dir}/`,
+          force: false,
+        },
         { stdout: () => undefined, stderr: () => undefined, env: {} },
       ),
-    ).rejects.toMatchObject({ exitCode: 5, nextAction: expect.stringContaining('must point to a file, not a directory') });
+    ).rejects.toMatchObject({
+      exitCode: 5,
+      nextAction: expect.stringContaining('must point to a file, not a directory'),
+    });
     rmSync(dir, { recursive: true, force: true });
   });
 
