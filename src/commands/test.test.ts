@@ -3437,6 +3437,17 @@ describe('runScaffold', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it('--out naming an existing directory with a trailing separator says it is a directory, not that it exists', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cli-scaffold-sepdir-'));
+    await expect(
+      runScaffold(
+        { profile: 'default', output: 'text', debug: false, scaffoldType: 'frontend', out: `${dir}/`, force: false },
+        { stdout: () => undefined, stderr: () => undefined, env: {} },
+      ),
+    ).rejects.toMatchObject({ exitCode: 5, nextAction: expect.stringContaining('must point to a file, not a directory') });
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   it('--out pointing at an existing path (here a directory) rejects without --force', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'cli-scaffold-dir-'));
     await expect(
