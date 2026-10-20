@@ -101,12 +101,10 @@ export async function readGithubRunContext(
       },
       deps.fetchImpl ?? globalThis.fetch,
     );
-    // The OPEN PR whose head IS this commit is the one this deployment belongs to.
-    // Anything looser (several open PRs, a merged or closed one) is not a gate target:
-    // a redeploy of a merged PR's head commit must not clone an environment for it.
-    const exact = pulls.filter(p => p.headSha === sha && p.state === 'open');
-    const open = pulls.filter(p => p.state === 'open');
-    const chosen = exact[0] ?? (open.length === 1 ? open[0] : undefined);
+    // Only an OPEN PR whose head IS this commit is the one this deployment belongs to.
+    // Anything looser (an open PR that merely contains the commit, a merged or closed one) is
+    // not a gate target: a redeploy of a merged PR's head commit must not clone an environment.
+    const chosen = pulls.find(p => p.headSha === sha && p.state === 'open');
     if (!chosen) {
       return {
         kind: 'no_pull_request',

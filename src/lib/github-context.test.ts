@@ -127,6 +127,18 @@ describe('readGithubRunContext', () => {
       );
       expect(done).toMatchObject({ kind: 'no_pull_request', event: 'deployment_status' });
     }
+    // Nor an open PR that only contains the commit (branched off it): its head is another commit.
+    const containing = await readGithubRunContext(
+      actionsEnv({ GITHUB_EVENT_NAME: 'deployment_status', GITHUB_TOKEN: 't' }),
+      {
+        ...eventFile({ deployment: { sha: SHA } }),
+        fetchImpl: githubApi([
+          { number: 7, state: 'closed', head: { sha: SHA, ref: 'feat/done' } },
+          { number: 8, state: 'open', head: { sha: OTHER, ref: 'feat/next' } },
+        ]),
+      },
+    );
+    expect(containing).toMatchObject({ kind: 'no_pull_request', event: 'deployment_status' });
   });
 
   it('deployment_status: an open PR wins over a closed one with the same head commit', async () => {
