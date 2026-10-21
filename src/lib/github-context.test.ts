@@ -220,6 +220,32 @@ describe('readGithubRunContext', () => {
     ).rejects.toMatchObject({ exitCode: 10, message: expect.stringContaining('not JSON') });
   });
 
+  it('deployment_status: a body that breaks off mid-stream is exit 10 with its cause, not "not JSON"', async () => {
+    const broken = vi.fn(
+      async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('[{"number":'));
+              controller.error(new Error('socket hang up'));
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+    ) as unknown as typeof globalThis.fetch;
+    const failure = readGithubRunContext(
+      actionsEnv({ GITHUB_EVENT_NAME: 'deployment_status', GITHUB_TOKEN: 't' }),
+      { ...eventFile({ deployment: { sha: SHA } }), fetchImpl: broken },
+    );
+    await expect(failure).rejects.toMatchObject({
+      exitCode: 10,
+      message: expect.stringContaining('could not be read: socket hang up'),
+    });
+    await expect(failure).rejects.not.toMatchObject({
+      message: expect.stringContaining('not JSON'),
+    });
+  });
+
   it('deployment_status: needs GITHUB_TOKEN, and a failed lookup never falls back to a guess', async () => {
     await expect(
       readGithubRunContext(

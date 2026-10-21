@@ -212,12 +212,15 @@ async function listPullsForCommit(
     body = await response.json();
   } catch (err) {
     // A proxy or captive portal answering 200 with HTML must be a transient failure, not an uncaught crash; so is
-    // a body that stalls until the timeout aborts it, which is reported as the timeout it is.
+    // a body that stalls until the timeout aborts it, which is reported as the timeout it is, and a connection that
+    // drops mid-body, which is reported with its own cause rather than as "not JSON".
     throw new CLIError(
       `Could not look up the pull request for commit ${args.sha.slice(0, 7)}: ` +
         (isTimeout(err)
           ? `GitHub did not finish answering within ${Math.round(args.timeoutMs / 1000)}s`
-          : `GitHub answered ${response.status} with a body that is not JSON`),
+          : err instanceof SyntaxError
+            ? `GitHub answered ${response.status} with a body that is not JSON`
+            : `GitHub's ${response.status} response body could not be read: ${err instanceof Error ? err.message : String(err)}`),
       10,
     );
   }
